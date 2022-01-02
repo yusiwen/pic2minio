@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
@@ -56,7 +57,7 @@ func main() {
 		if IsValidUrl(file) {
 			h := sha1.New()
 			h.Write([]byte(file))
-			base := fmt.Sprintf("%x", h.Sum(nil)) + ".png"
+			base := fmt.Sprintf("%x", h.Sum(nil))
 
 			func() {
 				//Get the response bytes from the url
@@ -65,9 +66,19 @@ func main() {
 					log.Fatalln(err)
 				}
 				defer response.Body.Close()
+				mimeType := response.Header.Get("Content-Type")
+				t := strings.Split(mimeType, "/")
+				if len(t) < 2 {
+					base = base + ".png"
+				} else {
+					base = base + "." + t[1]
+				}
 
+				optionalData := minio.PutObjectOptions{
+					ContentType: mimeType,
+				}
 				if _, err := minioClient.PutObject(ctx, bucket, baseDir+"/"+base,
-					response.Body, response.ContentLength, minio.PutObjectOptions{}); err != nil {
+					response.Body, response.ContentLength, optionalData); err != nil {
 					log.Fatalln(err)
 				}
 				output = append(output, fmt.Sprintf("https://%s/%s/%s/%s", endpoint, bucket, baseDir, base))
@@ -75,9 +86,13 @@ func main() {
 
 		} else {
 			base := filepath.Base(file)
+			ext := filepath.Ext(file)
+			optionalData := minio.PutObjectOptions{
+				ContentType: "image/" + ext,
+			}
 			if _, err :=
 				minioClient.FPutObject(ctx, bucket, baseDir+"/"+base,
-					file, minio.PutObjectOptions{}); err != nil {
+					file, optionalData); err != nil {
 				log.Fatalln(err)
 			}
 			output = append(output, fmt.Sprintf("https://%s/%s/%s/%s", endpoint, bucket, baseDir, base))
